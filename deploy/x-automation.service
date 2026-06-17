@@ -1,0 +1,27 @@
+[Unit]
+Description=X (Twitter) Automation — Groq + DeepSeek
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# VPS-də öz istifadəçi adınızla dəyişdirin
+User=ubuntu
+WorkingDirectory=/home/ubuntu/x-automation
+
+# Virtualenv Python-u istifadə et
+ExecStart=/home/ubuntu/x-automation/venv/bin/python main.py
+
+# Xəta halında yenidən başla
+Restart=on-failure
+RestartSec=30s
+
+# Standart çıxışları journalctl-ə yönləndir
+StandardOutput=journal
+StandardError=journal
+
+# Mühit dəyişənlərini .env faylından oxu
+EnvironmentFile=/home/ubuntu/x-automation/.env
+
+[Install]
+WantedBy=multi-user.target
