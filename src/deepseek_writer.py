@@ -90,6 +90,9 @@ RULE — Post type decision:
 STRICT RULE — Consistency and Non-Contradiction:
 Do NOT select a trend, take a stance, or present arguments that contradict or repeat the stances and logical viewpoints in the recent posts history. Keep the narrative, opinions, and viewpoint strictly consistent. For example, if a previous post argued that a technology is a major breakthrough, a new post must not claim it is useless or a fad.
 
+STRICT RULE — Subject Variety:
+Do NOT select a trend that focuses on the same company, product, or specific core subject (e.g. SpaceX, Tesla, Stripe, Bitcoin, Nvidia) that was already covered in the recent posts history. We must maintain diversity of subjects on the timeline. If the top trend is a repetition of a recently covered company or topic, select the next strongest, non-repeating trend from the list.
+
 Reply ONLY in JSON:
 {
   "chosen_trend": "name of the chosen trend",
@@ -354,7 +357,7 @@ Generate the 1-2 sentence comment/explanation for X now:"""
         logger.info(f"✍️  Generated video comment: '{comment}'")
         return comment
 
-    def verify_video_relevance(self, candidates: list[dict]) -> int | None:
+    def verify_video_relevance(self, candidates: list[dict], recent_posts: list[dict] = None) -> int | None:
         """
         Sends the top video tweet candidates to DeepSeek and asks it to select the single
         most professional, serious, and highly relevant tweet about business, startups, or finance.
@@ -362,6 +365,7 @@ Generate the 1-2 sentence comment/explanation for X now:"""
         
         Args:
             candidates: list of tweet dicts (containing 'id', 'text', 'username')
+            recent_posts: list of recent post history to enforce subject variety
             
         Returns:
             The index (0-based) of the selected tweet, or None if no candidate is relevant.
@@ -381,12 +385,17 @@ STRICT CRITERIA:
 - Note: The candidates list is sorted in descending order of popularity and views (Candidate Index 0 has the highest views, Index 1 is next, etc.).
 - You MUST select the candidate with the HIGHEST views (closest to Index 0) that fully satisfies these strict criteria. Only skip a higher-ranked candidate if it fails these criteria.
 
+STRICT RULE — Subject Variety:
+Do NOT select a video tweet that focuses on the same company, product, or specific core subject (e.g. SpaceX, Tesla, Stripe, Bitcoin, Nvidia) that was already covered in the recent posts history. We must maintain diversity of subjects on the timeline. If a high-ranked candidate is a repetition of a recently covered company or topic, skip it and select the next best non-repeating candidate.
+
 Return your decision in the following JSON format:
 {{
-  "selected_index": integer (0-based index of the chosen tweet from the list, or -1 if none of the candidates are relevant/professional),
+  "selected_index": integer (0-based index of the chosen tweet from the list, or -1 if none of the candidates are relevant/professional/diverse),
   "reason": "a brief 1-sentence reason for choosing this candidate or rejecting all"
 }}
 Reply ONLY with the raw JSON, no markdown formatting, no code blocks."""
+
+        history_text = self._format_recent_posts(recent_posts)
 
         # Format candidates for the prompt
         candidates_text = []
@@ -396,7 +405,12 @@ Author: @{c['username']}
 Tweet Text: {c['text']}
 ---""")
         
-        user_msg = "Here are the candidate video tweets to evaluate:\n\n" + "\n".join(candidates_text)
+        user_msg = f"""Recent posts history (do NOT select videos about these topics/companies):
+{history_text}
+
+Here are the candidate video tweets to evaluate:
+
+{"\n".join(candidates_text)}"""
         
         try:
             response = self.client.chat.completions.create(

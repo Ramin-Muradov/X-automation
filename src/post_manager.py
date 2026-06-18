@@ -261,39 +261,43 @@ class PostManager:
                 
                 # Ciddi hesab və ya viral post yoxlaması
                 followers = tweet.get("followers_count", 0)
-                is_verified = tweet.get("verified", False)
                 
                 metrics = tweet.get("public_metrics") or {}
                 views = metrics.get("impression_count", 0)
                 likes = metrics.get("like_count", 0)
                 retweets = metrics.get("retweet_count", 0)
                 
-                # Əgər hesab balacadırsa və verified deyilsə, lakin post özü viral olubsa (baxış >= 10k, like >= 50, retweets >= 10), icazə veririk
-                is_viral = views >= 10000 or likes >= 50 or retweets >= 10
+                # Viral limitləri: 300,000 baxış, 50 like və ya 10 retweet
+                is_viral = views >= 300000 or likes >= 50 or retweets >= 10
                 
-                if followers < min_followers and not is_verified and not is_viral:
-                    logger.debug(f"   Skipping account @{tweet['username']} with {followers} followers (not verified, no viral engagement, min {min_followers} required)")
+                # Mavi nişan (is_verified) imtiyazı ləğv edildi — kiçik hesablar hər zaman viral limitini keçməlidir
+                if followers < min_followers and not is_viral:
+                    logger.debug(f"   Skipping account @{tweet['username']} with {followers} followers (not viral enough, likes: {likes}, retweets: {retweets}, views: {views})")
                     continue
                 
-                valid_tweets.append((tweet, views))
+                # X API-də impression_count bəzən 0 qayıtdığı üçün like və retweet sayını ağırlaşdıraraq
+                # sıralama üçün ümumi aktivlik balı (engagement score) hesablayırıq.
+                score = views + (likes * 100) + (retweets * 200)
+                valid_tweets.append((tweet, score))
             
             if not valid_tweets:
                 logger.warning("⚠️ No new video tweets found from authoritative accounts.")
                 return {"success": False, "error": "No new authoritative video tweets available"}
                 
-            # Ən yüksək baxış sayına (views/impressions) görə sırala (beləcə ən çox baxış yığan öndə olur)
+            # Aktivlik balına (score) görə böyükdən kiçiyə sırala
             valid_tweets.sort(key=lambda x: x[1], reverse=True)
             
-            logger.info(f"   Son {window_hours} saatlıq video namizədlər (Baxış sayına görə sıralanmış):")
+            logger.info(f"   Son {window_hours} saatlıq video namizədlər (Aktivlik balına görə sıralanmış):")
             for idx, (tweet, score) in enumerate(valid_tweets[:20]):
-                logger.info(f"      [{idx}] ID: {tweet['id']} by @{tweet['username']} | Views: {score} | Likes: {tweet['public_metrics'].get('like_count', 0)}")
+                logger.info(f"      [{idx}] ID: {tweet['id']} by @{tweet['username']} | Score: {score} | Likes: {tweet['public_metrics'].get('like_count', 0)} | Views: {tweet['public_metrics'].get('impression_count', 0)}")
 
-            # İlk 20 ən çox izlənən namizədi götürürük
+            # İlk 20 ən çox aktivlik göstərən namizədi götürürük
             candidates = [x[0] for x in valid_tweets[:20]]
             
             # ── 3. Mövzu Ciddiliyinin Analizi (DeepSeek) ───────────────────────────
             logger.info("\n[STEP 3/3] 🧠 DeepSeek — Verifying business relevance...")
-            chosen_index = self.writer.verify_video_relevance(candidates)
+            recent_posts = self._get_recent_history(limit=10)
+            chosen_index = self.writer.verify_video_relevance(candidates, recent_posts=recent_posts)
             
             if chosen_index is None or chosen_index < 0 or chosen_index >= len(candidates):
                 logger.warning("⚠️ DeepSeek rejected all video candidates as unrelated or non-professional.")
@@ -302,7 +306,7 @@ class PostManager:
             chosen_tweet = candidates[chosen_index]
             chosen_id_str = str(chosen_tweet["id"])
             
-            # Seçilmiş tweet-in baxış sayını tapırıq
+            # Seçilmiş tweet-in aktivlik balını tapırıq
             chosen_score = 0
             for t, sc in valid_tweets:
                 if t["id"] == chosen_id_str:
@@ -310,7 +314,7 @@ class PostManager:
                     break
             
             logger.info(f"\n   ✅ Selected Tweet ID: {chosen_id_str} by @{chosen_tweet['username']}")
-            logger.info(f"   Engagement Score: {chosen_score} (Likes: {chosen_tweet['public_metrics'].get('like_count', 0)}, Retweets: {chosen_tweet['public_metrics'].get('retweet_count', 0)})")
+            logger.info(f"   Engagement Score: {chosen_score} (Likes: {chosen_tweet['public_metrics'].get('like_count', 0)}, Retweets: {chosen_tweet['public_metrics'].get('retweet_count', 0)}, Views: {chosen_tweet['public_metrics'].get('impression_count', 0)})")
             logger.info(f"   Original Text: {chosen_tweet['text'][:120]}...")
 
             # ── 4. Şərh Yazılması və Paylaşma ────────────────────────────────────
