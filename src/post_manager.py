@@ -321,8 +321,8 @@ class PostManager:
             logger.info("   🧠 DeepSeek — Generating comment...")
             comment = self.writer.create_video_comment(chosen_tweet["text"])
 
-            # Native Video Quote: Appending /video/1 forces X to render the video natively on the timeline.
-            tweet_url = f"https://x.com/{chosen_tweet['username']}/status/{chosen_id_str}/video/1"
+            # Standard Quote Tweet: Appending the standard tweet URL renders it as a quote card with the original author and text.
+            tweet_url = f"https://x.com/{chosen_tweet['username']}/status/{chosen_id_str}"
             full_text = f"{comment} {tweet_url}"
 
             logger.info(f"   🐦 Reposting to X as native video...")
